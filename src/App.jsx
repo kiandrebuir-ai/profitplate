@@ -675,6 +675,7 @@ function MainApp({ restaurant, role, update, onLogout, showToast, theme, toggleT
   const [receipt, setReceipt] = useState(null);
   const [toast, setToast] = useState(null);
   const [briefing, setBriefing] = useState(true);
+  const [modifierModal, setModifierModal] = useState(null);
   const [tutorial, setTutorial] = useState(() => {
     const inv = restaurant.inventory || [];
     const menu = restaurant.menuItems || [];
@@ -692,8 +693,6 @@ function MainApp({ restaurant, role, update, onLogout, showToast, theme, toggleT
   const totalCOGS = sales.reduce((s, x) => s + x.cost, 0);
   const totalProfit = totalRevenue - totalCOGS;
   const lowStock = inventory.filter(i => i.qty <= i.threshold);
-
-  const [modifierModal, setModifierModal] = useState(null); // {item, modifiers:[]}
 
   function addToOrder(item) {
     setModifierModal({ item, modifiers: [] });
