@@ -125,6 +125,7 @@ export default function App() {
   const [restaurants, setRestaurants] = useState(() => loadData());
   const [screen, setScreen] = useState("landing");
   const [activeId, setActiveId] = useState(null);
+  const [activeRole, setActiveRole] = useState("owner");
   const [toast, setToast] = useState(null);
 
   function showToast(msg, type = "success") {
@@ -207,15 +208,16 @@ export default function App() {
 
   // PIN
   if (screen === "pin" && restaurant) return (
-    <PinScreen restaurant={restaurant} onSuccess={() => setScreen("app")} onBack={() => setScreen("select")} />
+    <PinScreen restaurant={restaurant} onSuccess={(role) => { setActiveRole(role); setScreen("app"); }} onBack={() => setScreen("select")} />
   );
 
   // APP
   if (screen === "app" && restaurant) return (
     <MainApp
       restaurant={restaurant}
+      role={activeRole}
       update={u => updateRestaurant(activeId, u)}
-      onLogout={() => setScreen("select")}
+      onLogout={() => { setScreen("select"); setActiveRole("owner"); }}
       showToast={showToast}
     />
   );
@@ -277,6 +279,7 @@ function SetupWizard({ onComplete, onBack }) {
     if (step === 1) {
       if (data.pin.length < 4) return t("PIN must be 4+ digits", "error");
       if (data.pin !== data.confirmPin) return t("PINs don't match", "error");
+      if (!data.secretQuestion || !data.secretAnswer) return t("Set a recovery question", "error");
     }
     if (step === steps.length - 1) return onComplete({ ...data, setupDone: true });
     setStep(s => s + 1);
@@ -307,9 +310,27 @@ function SetupWizard({ onComplete, onBack }) {
 
         {step === 1 && (
           <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ fontSize: 12, color: G.muted, lineHeight: 1.7 }}>This PIN protects access to your dashboard. Keep it secure.</div>
-            <div><div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 6 }}>CREATE PIN (4–6 digits)</div><input type="password" inputMode="numeric" maxLength={6} value={data.pin} onChange={e => setData(d => ({ ...d, pin: e.target.value.replace(/\D/g, "") }))} placeholder="••••" /></div>
-            <div><div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 6 }}>CONFIRM PIN</div><input type="password" inputMode="numeric" maxLength={6} value={data.confirmPin} onChange={e => setData(d => ({ ...d, confirmPin: e.target.value.replace(/\D/g, "") }))} placeholder="••••" /></div>
+            <div style={{ fontSize: 12, color: G.muted, lineHeight: 1.7 }}>Owner PIN protects full access. Staff PIN gives cashier-only access (ring up sales only).</div>
+            <div style={{ background: G.accent+"11", border: `1px solid ${G.accent}33`, borderRadius: 6, padding: 12, fontSize: 11, color: G.accent }}>OWNER PIN (full access)</div>
+            <div><div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 6 }}>CREATE OWNER PIN (4–6 digits)</div><input type="password" inputMode="numeric" maxLength={6} value={data.pin} onChange={e => setData(d => ({ ...d, pin: e.target.value.replace(/\D/g, "") }))} placeholder="••••" /></div>
+            <div><div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 6 }}>CONFIRM OWNER PIN</div><input type="password" inputMode="numeric" maxLength={6} value={data.confirmPin} onChange={e => setData(d => ({ ...d, confirmPin: e.target.value.replace(/\D/g, "") }))} placeholder="••••" /></div>
+            <div style={{ background: G.border, height: 1 }} />
+            <div style={{ background: "#0a0a14", border: `1px solid ${G.border}`, borderRadius: 6, padding: 12, fontSize: 11, color: G.muted }}>STAFF PIN (cashier only — optional)</div>
+            <div><div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 6 }}>STAFF PIN (4–6 digits)</div><input type="password" inputMode="numeric" maxLength={6} value={data.staffPin||""} onChange={e => setData(d => ({ ...d, staffPin: e.target.value.replace(/\D/g, "") }))} placeholder="••••  (optional)" /></div>
+            <div style={{ background: G.border, height: 1 }} />
+            <div style={{ fontSize: 10, letterSpacing: 2, color: G.muted }}>PIN RECOVERY</div>
+            <div>
+              <div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 6 }}>SECRET QUESTION</div>
+              <select value={data.secretQuestion||""} onChange={e => setData(d => ({ ...d, secretQuestion: e.target.value }))}>
+                <option value="">Select a question</option>
+                <option>What was the name of your first pet?</option>
+                <option>What street did you grow up on?</option>
+                <option>What is your mother's maiden name?</option>
+                <option>What was the name of your first school?</option>
+                <option>What city were you born in?</option>
+              </select>
+            </div>
+            <div><div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 6 }}>YOUR ANSWER</div><input placeholder="Answer (case sensitive)" value={data.secretAnswer||""} onChange={e => setData(d => ({ ...d, secretAnswer: e.target.value }))} /></div>
           </div>
         )}
 
@@ -390,6 +411,42 @@ function SetupWizard({ onComplete, onBack }) {
         </div>
       </div>
       {toast && <div className={`toast ${toast.type === "success" ? "ts" : "te"}`}>{toast.msg}</div>}
+    {/* Edit Menu Item Modal */}
+    {editingItem && (
+      <div className="modal-bg" onClick={() => setEditingItem(null)}>
+        <div className="modal slide" onClick={e => e.stopPropagation()}>
+          <div style={{ fontFamily: G.display, fontSize: 24, letterSpacing: 2, color: "#fff", marginBottom: 20 }}>EDIT MENU ITEM</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div><div style={{ fontSize: 10, color: G.muted, marginBottom: 4 }}>ITEM NAME</div>
+              <input value={editingItem.name} onChange={e => setEditingItem(m => ({ ...m, name: e.target.value }))} /></div>
+            <div><div style={{ fontSize: 10, color: G.muted, marginBottom: 4 }}>SELL PRICE ($)</div>
+              <input type="number" value={editingItem.price} onChange={e => setEditingItem(m => ({ ...m, price: e.target.value }))} /></div>
+            <div style={{ fontSize: 10, color: G.muted, marginBottom: 8 }}>LINKED INGREDIENTS</div>
+            {(editingItem.ingredients || []).map(ing => {
+              const inv = inventory.find(i => i.id === ing.id);
+              return (
+                <div key={ing.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "6px 10px", background: "#0a0a14", borderRadius: 5 }}>
+                  <span style={{ color: G.accent }}>{inv?.name || ing.id}</span>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input type="number" value={ing.qty} style={{ width: 60, padding: "4px 8px" }}
+                      onChange={e => setEditingItem(m => ({ ...m, ingredients: m.ingredients.map(i => i.id === ing.id ? { ...i, qty: parseFloat(e.target.value) || 1 } : i) }))} />
+                    <button className="btn-danger" style={{ padding: "4px 8px" }} onClick={() => setEditingItem(m => ({ ...m, ingredients: m.ingredients.filter(i => i.id !== ing.id) }))}>✕</button>
+                  </div>
+                </div>
+              );
+            })}
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <button className="btn" onClick={() => {
+                update(r => ({ ...r, menuItems: (r.menuItems || menuItems).map(m => m.id === editingItem.id ? { ...editingItem, price: parseFloat(editingItem.price) || 0 } : m) }));
+                showToast(editingItem.name + " updated!");
+                setEditingItem(null);
+              }}>SAVE CHANGES</button>
+              <button className="btn-ghost" onClick={() => setEditingItem(null)}>CANCEL</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
     </div>
   );
 }
@@ -524,23 +581,57 @@ function InventoryForm({ invItem, setInvItem, onAdd, inventory, onDelete }) {
 function PinScreen({ restaurant, onSuccess, onBack }) {
   const [entered, setEntered] = useState("");
   const [shake, setShake] = useState(false);
+  const [mode, setMode] = useState("pin"); // pin | recovery
+  const [recoveryAnswer, setRecoveryAnswer] = useState("");
+  const [recoveryError, setRecoveryError] = useState("");
 
   function press(d) {
     if (entered.length >= 6) return;
     const next = entered + d;
     setEntered(next);
-    if (next.length >= restaurant.pin.length) {
-      if (next === restaurant.pin) { onSuccess(); }
-      else { setShake(true); setTimeout(() => { setShake(false); setEntered(""); }, 600); }
+    const minLen = Math.min(restaurant.pin.length, restaurant.staffPin ? Math.min(restaurant.pin.length, restaurant.staffPin.length) : restaurant.pin.length);
+    if (next.length >= restaurant.pin.length || (restaurant.staffPin && next.length >= restaurant.staffPin.length)) {
+      if (next === restaurant.pin) { onSuccess("owner"); }
+      else if (restaurant.staffPin && next === restaurant.staffPin) { onSuccess("staff"); }
+      else if (next.length >= restaurant.pin.length) {
+        setShake(true); setTimeout(() => { setShake(false); setEntered(""); }, 600);
+      }
     }
   }
+
+  function submitRecovery() {
+    if (recoveryAnswer.trim() === (restaurant.secretAnswer || "").trim()) {
+      onSuccess("owner");
+    } else {
+      setRecoveryError("Incorrect answer. Try again.");
+    }
+  }
+
+  if (mode === "recovery") return (
+    <div style={{ fontFamily: G.font, background: G.bg, minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: G.text }}>
+      <style>{css}</style>
+      <div style={{ width: "100%", maxWidth: 400, padding: 24 }} className="fade">
+        <div style={{ fontFamily: G.display, fontSize: 28, letterSpacing: 3, color: "#fff", marginBottom: 4 }}>PIN RECOVERY</div>
+        <div style={{ fontSize: 11, color: G.muted, marginBottom: 28 }}>{restaurant.name}</div>
+        <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ fontSize: 12, color: G.muted }}>{restaurant.secretQuestion || "What was the name of your first pet?"}</div>
+          <input placeholder="Your answer" value={recoveryAnswer} onChange={e => setRecoveryAnswer(e.target.value)} />
+          {recoveryError && <div style={{ fontSize: 11, color: G.red }}>{recoveryError}</div>}
+          <button className="btn" onClick={submitRecovery}>VERIFY ANSWER</button>
+          <button className="btn-ghost" onClick={() => setMode("pin")} style={{ fontSize: 11 }}>← BACK TO PIN</button>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ fontFamily: G.font, background: G.bg, minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: G.text }}>
       <style>{css}</style>
       <div style={{ textAlign: "center" }} className="fade">
         <div style={{ fontFamily: G.display, fontSize: 36, letterSpacing: 3, color: "#fff", marginBottom: 4 }}>{restaurant.name}</div>
-        <div style={{ fontSize: 11, color: G.muted, letterSpacing: 2, marginBottom: 40 }}>ENTER PIN TO CONTINUE</div>
+        <div style={{ fontSize: 11, color: G.muted, letterSpacing: 2, marginBottom: 12 }}>ENTER PIN TO CONTINUE</div>
+        {restaurant.staffPin && <div style={{ fontSize: 10, color: G.muted, marginBottom: 28 }}>Owner PIN = full access · Staff PIN = cashier only</div>}
+        {!restaurant.staffPin && <div style={{ marginBottom: 28 }} />}
         <div style={{ display: "flex", gap: 14, justifyContent: "center", marginBottom: 36, animation: shake ? "shake .4s ease" : "none" }}>
           {Array.from({ length: restaurant.pin.length }).map((_, i) => (
             <div key={i} style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${i < entered.length ? G.accent : G.border}`, background: i < entered.length ? G.accent : "transparent", transition: "all .15s" }} />
@@ -552,25 +643,30 @@ function PinScreen({ restaurant, onSuccess, onBack }) {
           <button className="pin-btn" onClick={() => press("0")}>0</button>
           <button className="pin-btn" onClick={() => setEntered(e => e.slice(0, -1))} style={{ fontSize: 16, color: G.muted }}>⌫</button>
         </div>
-        <button className="btn-ghost" style={{ marginTop: 28, fontSize: 11 }} onClick={onBack}>← BACK</button>
+        <div style={{ marginTop: 24, display: "flex", gap: 12, justifyContent: "center" }}>
+          <button className="btn-ghost" style={{ fontSize: 11 }} onClick={onBack}>← BACK</button>
+          {restaurant.secretQuestion && <button className="btn-ghost" style={{ fontSize: 11 }} onClick={() => setMode("recovery")}>FORGOT PIN?</button>}
+        </div>
       </div>
     </div>
   );
 }
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
-function MainApp({ restaurant, update, onLogout, showToast }) {
+function MainApp({ restaurant, role, update, onLogout, showToast }) {
+  const isOwner = role === "owner";
   const [tab, setTab] = useState("dashboard");
   const [order, setOrder] = useState([]);
+  const [orderNote, setOrderNote] = useState("");
   const [receipt, setReceipt] = useState(null);
   const [toast, setToast] = useState(null);
   const [briefing, setBriefing] = useState(true);
 
   function t(msg, type = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 2600); }
 
-  const sales = restaurant.sales || DEMO_SALES;
-  const inventory = restaurant.inventory || DEMO_INVENTORY;
-  const menuItems = restaurant.menuItems || DEMO_MENU;
+  const sales = restaurant.sales || [];
+  const inventory = restaurant.inventory || [];
+  const menuItems = restaurant.menuItems || [];
   const taxRate = parseFloat(restaurant.taxRate) || 0;
 
   const totalRevenue = sales.reduce((s, x) => s + x.price, 0);
@@ -612,21 +708,38 @@ function MainApp({ restaurant, update, onLogout, showToast }) {
       }
     }
     update(r => ({ ...r, inventory: newInv, sales: newSales }));
-    setReceipt({ items: [...order], subtotal, tax, total, profit: subtotal - totalCost, time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) });
+    setReceipt({ items: [...order], subtotal, tax, total, profit: subtotal - totalCost, time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), note: orderNote });
     setOrder([]);
+    setOrderNote("");
   }
 
-  const tabs = [
-    { id: "dashboard", label: "Dashboard", icon: "◈" },
-    { id: "pos", label: "Ring Up", icon: "⊕" },
-    { id: "inventory", label: "Inventory", icon: "⊟" },
-    { id: "margins", label: "Margins", icon: "%" },
-    { id: "deals", label: "Deals", icon: "★" },
-    { id: "pricing", label: "Pricing AI", icon: "🧠" },
-    { id: "waste", label: "Waste Monitor", icon: "🔍" },
-    { id: "paycheck", label: "Paycheck", icon: "$" },
-    { id: "settings", label: "Settings", icon: "⚙" },
+  function voidLastSale() {
+    if (!sales.length) return t("No sales to void", "error");
+    const last = sales[sales.length - 1];
+    const mi = menuItems.find(m => m.name === last.item);
+    let newInv = [...inventory];
+    if (mi) {
+      for (const ing of (mi.ingredients || [])) {
+        newInv = newInv.map(i => i.id === ing.id ? { ...i, qty: parseFloat((i.qty + ing.qty).toFixed(2)) } : i);
+      }
+    }
+    update(r => ({ ...r, sales: (r.sales || sales).slice(0, -1), inventory: newInv }));
+    t("Last sale voided — inventory restored");
+  }
+
+  const allTabs = [
+    { id: "dashboard", label: "Dashboard", icon: "◈", ownerOnly: false },
+    { id: "pos", label: "Ring Up", icon: "⊕", ownerOnly: false },
+    { id: "inventory", label: "Inventory", icon: "⊟", ownerOnly: true },
+    { id: "margins", label: "Margins", icon: "%", ownerOnly: true },
+    { id: "deals", label: "Deals", icon: "★", ownerOnly: true },
+    { id: "pricing", label: "Pricing AI", icon: "🧠", ownerOnly: true },
+    { id: "waste", label: "Waste Monitor", icon: "🔍", ownerOnly: true },
+    { id: "eod", label: "End of Day", icon: "📋", ownerOnly: true },
+    { id: "paycheck", label: "Paycheck", icon: "$", ownerOnly: true },
+    { id: "settings", label: "Settings", icon: "⚙", ownerOnly: true },
   ];
+  const tabs = allTabs.filter(t => !t.ownerOnly || isOwner);
 
   // ── AI: Daily Briefing data ──
   const bestMarginItem = [...menuItems].sort((a, b) => {
@@ -686,6 +799,7 @@ function MainApp({ restaurant, update, onLogout, showToast }) {
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {lowStock.length > 0 && <span className="badge br">⚠ {lowStock.length} LOW</span>}
           <button style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer" }} onClick={() => setBriefing(true)} title="Daily Briefing">🔔</button>
+          {!isOwner && <span className="badge by">STAFF MODE</span>}
           <button className="btn-ghost" style={{ fontSize: 10, padding: "6px 12px" }} onClick={onLogout}>LOCK</button>
         </div>
       </div>
@@ -773,7 +887,10 @@ function MainApp({ restaurant, update, onLogout, showToast }) {
         {/* ── POS ── */}
         {tab === "pos" && (
           <div className="fade">
-            <div style={{ fontFamily: G.display, fontSize: 30, letterSpacing: 3, marginBottom: 20, color: "#fff" }}>RING UP A SALE</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div style={{ fontFamily: G.display, fontSize: 30, letterSpacing: 3, color: "#fff" }}>RING UP A SALE</div>
+              {isOwner && sales.length > 0 && <button className="btn-danger" style={{ fontSize: 11 }} onClick={voidLastSale}>VOID LAST SALE</button>}
+            </div>
             {receipt ? (
               <div style={{ maxWidth: 420, margin: "0 auto" }}>
                 <div className="card" style={{ borderColor: G.green + "55", textAlign: "center" }}>
@@ -1126,6 +1243,66 @@ function MainApp({ restaurant, update, onLogout, showToast }) {
           </div>
         )}
 
+
+        {/* ── END OF DAY ── */}
+        {tab === "eod" && (
+          <div className="fade">
+            <div style={{ fontFamily: G.display, fontSize: 30, letterSpacing: 3, marginBottom: 8, color: "#fff" }}>END OF DAY REPORT</div>
+            <div style={{ fontSize: 12, color: G.muted, marginBottom: 24 }}>Summary of today's performance</div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 14, marginBottom: 20 }}>
+              {[
+                { label: "TOTAL REVENUE", val: `$${totalRevenue.toFixed(2)}`, color: G.green },
+                { label: "FOOD COST", val: `$${totalCOGS.toFixed(2)}`, color: G.red },
+                { label: "NET PROFIT", val: `$${totalProfit.toFixed(2)}`, color: G.accent },
+                { label: "TOTAL SALES", val: sales.length, color: G.text },
+                { label: "AVG SALE", val: sales.length > 0 ? `$${(totalRevenue / sales.length).toFixed(2)}` : "$0", color: G.yellow },
+                { label: "PROFIT MARGIN", val: totalRevenue > 0 ? `${((totalProfit/totalRevenue)*100).toFixed(1)}%` : "0%", color: G.accent },
+              ].map((s, i) => (
+                <div key={i} className="card" style={{ borderTop: `2px solid ${s.color}` }}>
+                  <div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 8 }}>{s.label}</div>
+                  <div style={{ fontFamily: G.display, fontSize: 28, color: s.color }}>{s.val}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Best sellers */}
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 14 }}>BEST SELLERS TODAY</div>
+              {(() => {
+                const counts = {};
+                sales.forEach(s => { counts[s.item] = (counts[s.item] || 0) + 1; });
+                return Object.entries(counts).sort((a,b) => b[1]-a[1]).slice(0,5).map(([name, count]) => (
+                  <div key={name} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${G.border}`, fontSize: 12 }}>
+                    <span>{name}</span>
+                    <span style={{ color: G.accent }}>{count} sold</span>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <button className="btn" onClick={() => {
+                const rows = [["Item","Time","Sale","Food Cost","Profit","Note"]];
+                sales.forEach(s => rows.push([s.item, s.time, s.price.toFixed(2), s.cost.toFixed(2), s.profit.toFixed(2), s.note||""]));
+                const csv = rows.map(r => r.join(",")).join("\n");
+                const blob = new Blob([csv], { type: "text/csv" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url; a.download = `profitplate-${new Date().toISOString().slice(0,10)}.csv`;
+                a.click(); URL.revokeObjectURL(url);
+              }}>⬇ EXPORT CSV</button>
+              <button className="btn-ghost" style={{ color: G.red, borderColor: G.red+"44" }} onClick={() => {
+                if (window.confirm("Clear all sales for today? This cannot be undone.")) {
+                  update(r => ({ ...r, sales: [] }));
+                  t("Sales cleared for new day");
+                }
+              }}>🗑 CLEAR DAY & RESET</button>
+            </div>
+          </div>
+        )}
+
         {/* ── PAYCHECK ── */}
         {tab === "paycheck" && (
           <div className="fade">
@@ -1165,6 +1342,7 @@ function MainApp({ restaurant, update, onLogout, showToast }) {
                         <td>${s.price.toFixed(2)}</td>
                         <td style={{ color: G.red }}>−${s.cost.toFixed(2)}</td>
                         <td style={{ color: G.green }}>+${s.profit.toFixed(2)}</td>
+                        {s.note && <td style={{ color: G.muted, fontSize: 10 }}>{s.note}</td>}
                       </tr>
                     ))}
                   </tbody>
@@ -1254,6 +1432,7 @@ function RestockRow({ item, onSave }) {
 
 // ─── SETTINGS PANEL ───────────────────────────────────────────────────────────
 function SettingsPanel({ restaurant, update, showToast, inventory, menuItems }) {
+  const [editingItem, setEditingItem] = useState(null); // holds menu item being edited
   const [section, setSection] = useState("restaurant");
   const [form, setForm] = useState({ name: restaurant.name, logo: restaurant.logo || "", taxRate: String(restaurant.taxRate), pin: "", confirmPin: "" });
   const [invItem, setInvItem] = useState({ name: "", unit: "each", qty: "", threshold: "", cost: "", mode: "single", packSize: "", packCost: "", packCount: "", bulkTotal: "", bulkCost: "", bulkServing: "" });
@@ -1328,11 +1507,22 @@ function SettingsPanel({ restaurant, update, showToast, inventory, menuItems }) 
       )}
 
       {section === "pin" && (
-        <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 400 }}>
-          <div style={{ fontSize: 12, color: G.muted }}>Change the PIN used to access this restaurant.</div>
-          <div><div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 6 }}>NEW PIN</div><input type="password" inputMode="numeric" maxLength={6} value={form.pin} onChange={e => setForm(f => ({ ...f, pin: e.target.value.replace(/\D/g, "") }))} placeholder="••••" /></div>
-          <div><div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 6 }}>CONFIRM PIN</div><input type="password" inputMode="numeric" maxLength={6} value={form.confirmPin} onChange={e => setForm(f => ({ ...f, confirmPin: e.target.value.replace(/\D/g, "") }))} placeholder="••••" /></div>
-          <button className="btn" onClick={savePin}>UPDATE PIN</button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 500 }}>
+          <div className="card">
+            <div style={{ fontSize: 10, letterSpacing: 2, color: G.accent, marginBottom: 14 }}>OWNER PIN (full access)</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div><div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 6 }}>NEW OWNER PIN</div><input type="password" inputMode="numeric" maxLength={6} value={form.pin} onChange={e => setForm(f => ({ ...f, pin: e.target.value.replace(/\D/g, "") }))} placeholder="••••" /></div>
+              <div><div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 6 }}>CONFIRM PIN</div><input type="password" inputMode="numeric" maxLength={6} value={form.confirmPin} onChange={e => setForm(f => ({ ...f, confirmPin: e.target.value.replace(/\D/g, "") }))} placeholder="••••" /></div>
+              <button className="btn" onClick={savePin}>UPDATE OWNER PIN</button>
+            </div>
+          </div>
+          <div className="card">
+            <div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 14 }}>STAFF PIN (cashier only — ring up sales only)</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div><div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 6 }}>STAFF PIN</div><input type="password" inputMode="numeric" maxLength={6} value={form.staffPin||""} onChange={e => setForm(f => ({ ...f, staffPin: e.target.value.replace(/\D/g, "") }))} placeholder="•••• (optional)" /></div>
+              <button className="btn-ghost" onClick={() => { update(r => ({ ...r, staffPin: form.staffPin })); showToast("Staff PIN saved!"); }}>SAVE STAFF PIN</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1398,7 +1588,10 @@ function SettingsPanel({ restaurant, update, showToast, inventory, menuItems }) 
                         <td>${item.price.toFixed(2)}</td>
                         <td style={{ color: G.red }}>${cogs.toFixed(2)}</td>
                         <td><span className={`badge ${parseFloat(margin) >= 60 ? "bg" : "by"}`}>{margin}%</span></td>
-                        <td><button className="btn-danger" onClick={() => update(r => ({ ...r, menuItems: (r.menuItems || menuItems).filter(m => m.id !== item.id) }))}>✕</button></td>
+                        <td style={{ display: "flex", gap: 6 }}>
+                          <button className="btn-sm" style={{ fontSize: 10 }} onClick={() => setEditingItem({...item})}>EDIT</button>
+                          <button className="btn-danger" onClick={() => update(r => ({ ...r, menuItems: (r.menuItems || menuItems).filter(m => m.id !== item.id) }))}>✕</button>
+                        </td>
                       </tr>
                     );
                   })}
