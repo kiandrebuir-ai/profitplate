@@ -33,13 +33,21 @@ function saveData(restaurants) {
 
 
 
-const G = {
+const DARK = {
   bg: "#080810", card: "#10101c", border: "#1c1c2e",
   accent: "#ff6b2b", accentHover: "#ff8c4f",
   green: "#4ade80", red: "#f87171", yellow: "#facc15",
   text: "#e8e0d0", muted: "#55556a",
   font: "'DM Mono', monospace", display: "'Bebas Neue', sans-serif",
 };
+const LIGHT = {
+  bg: "#f4f4f0", card: "#ffffff", border: "#e2e2e8",
+  accent: "#ff6b2b", accentHover: "#ff8c4f",
+  green: "#16a34a", red: "#dc2626", yellow: "#d97706",
+  text: "#1a1a2e", muted: "#888899",
+  font: "'DM Mono', monospace", display: "'Bebas Neue', sans-serif",
+};
+let G = DARK;
 
 const DEMO_INVENTORY = [
   { id: "i1", name: "Burger Patty", unit: "each", qty: 48, threshold: 10, cost: 1.20 },
@@ -123,6 +131,8 @@ const css = `
 // ─── MAIN APP ────────────────────────────────────────────────────────────────
 export default function App() {
   const [restaurants, setRestaurants] = useState(() => loadData());
+  const [theme, setTheme] = useState(() => localStorage.getItem("pp_theme") || "dark");
+  G = theme === "dark" ? DARK : LIGHT;
   const [screen, setScreen] = useState("landing");
   const [activeId, setActiveId] = useState(null);
   const [activeRole, setActiveRole] = useState("owner");
@@ -219,6 +229,8 @@ export default function App() {
       update={u => updateRestaurant(activeId, u)}
       onLogout={() => { setScreen("select"); setActiveRole("owner"); }}
       showToast={showToast}
+      theme={theme}
+      toggleTheme={() => { const t = theme === "dark" ? "light" : "dark"; setTheme(t); localStorage.setItem("pp_theme", t); }}
     />
   );
 
@@ -628,6 +640,8 @@ function PinScreen({ restaurant, onSuccess, onBack }) {
     <div style={{ fontFamily: G.font, background: G.bg, minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: G.text }}>
       <style>{css}</style>
       <div style={{ textAlign: "center" }} className="fade">
+        {restaurant.logo && <img src={restaurant.logo} alt="" style={{ width: 80, height: 80, borderRadius: 16, objectFit: "cover", marginBottom: 16, border: `2px solid ${G.accent}` }} onError={e => e.target.style.display="none"} />}
+        {!restaurant.logo && <div style={{ width: 80, height: 80, borderRadius: 16, background: G.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 36, marginBottom: 16 }}>🍔</div>}
         <div style={{ fontFamily: G.display, fontSize: 36, letterSpacing: 3, color: "#fff", marginBottom: 4 }}>{restaurant.name}</div>
         <div style={{ fontSize: 11, color: G.muted, letterSpacing: 2, marginBottom: 12 }}>ENTER PIN TO CONTINUE</div>
         {restaurant.staffPin && <div style={{ fontSize: 10, color: G.muted, marginBottom: 28 }}>Owner PIN = full access · Staff PIN = cashier only</div>}
@@ -653,7 +667,7 @@ function PinScreen({ restaurant, onSuccess, onBack }) {
 }
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
-function MainApp({ restaurant, role, update, onLogout, showToast }) {
+function MainApp({ restaurant, role, update, onLogout, showToast, theme, toggleTheme }) {
   const isOwner = role === "owner";
   const [tab, setTab] = useState("dashboard");
   const [order, setOrder] = useState([]);
@@ -661,6 +675,11 @@ function MainApp({ restaurant, role, update, onLogout, showToast }) {
   const [receipt, setReceipt] = useState(null);
   const [toast, setToast] = useState(null);
   const [briefing, setBriefing] = useState(true);
+  const [tutorial, setTutorial] = useState(() => {
+    const inv = restaurant.inventory || [];
+    const menu = restaurant.menuItems || [];
+    return inv.length === 0 && menu.length === 0;
+  });
 
   function t(msg, type = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 2600); }
 
@@ -674,11 +693,20 @@ function MainApp({ restaurant, role, update, onLogout, showToast }) {
   const totalProfit = totalRevenue - totalCOGS;
   const lowStock = inventory.filter(i => i.qty <= i.threshold);
 
+  const [modifierModal, setModifierModal] = useState(null); // {item, modifiers:[]}
+
   function addToOrder(item) {
+    setModifierModal({ item, modifiers: [] });
+  }
+
+  function confirmAddToOrder(item, modifiers) {
     setOrder(prev => {
-      const ex = prev.find(o => o.id === item.id);
-      return ex ? prev.map(o => o.id === item.id ? { ...o, qty: o.qty + 1 } : o) : [...prev, { ...item, qty: 1 }];
+      const key = item.id + (modifiers.length ? "_" + modifiers.join("_") : "");
+      const ex = prev.find(o => o._key === key);
+      const entry = { ...item, qty: 1, _key: key, modifiers };
+      return ex ? prev.map(o => o._key === key ? { ...o, qty: o.qty + 1 } : o) : [...prev, entry];
     });
+    setModifierModal(null);
   }
 
   function submitOrder() {
@@ -704,7 +732,7 @@ function MainApp({ restaurant, role, update, onLogout, showToast }) {
         }
         const cogs = getCOGS(mi, inventory);
         totalCost += cogs;
-        newSales.push({ id: uid(), item: mi.name, price: mi.price, cost: parseFloat(cogs.toFixed(2)), profit: parseFloat((mi.price - cogs).toFixed(2)), time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) });
+        newSales.push({ id: uid(), item: mi.name, price: mi.price, cost: parseFloat(cogs.toFixed(2)), profit: parseFloat((mi.price - cogs).toFixed(2)), time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), date: new Date().toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" }), dow: new Date().toLocaleDateString([], { weekday: "short" }) });
       }
     }
     update(r => ({ ...r, inventory: newInv, sales: newSales }));
@@ -755,6 +783,37 @@ function MainApp({ restaurant, role, update, onLogout, showToast }) {
     <div style={{ fontFamily: G.font, background: G.bg, minHeight: "100vh", color: G.text }}>
       <style>{css}</style>
 
+      {/* Getting Started Tutorial */}
+      {tutorial && (
+        <div className="modal-bg">
+          <div className="modal slide" style={{ maxWidth: 500 }}>
+            <div style={{ textAlign: "center", marginBottom: 24 }}>
+              <div style={{ fontSize: 48, marginBottom: 8 }}>👋</div>
+              <div style={{ fontFamily: G.display, fontSize: 32, letterSpacing: 2, color: "#fff" }}>WELCOME TO PROFITPLATE</div>
+              <div style={{ fontSize: 12, color: G.muted, marginTop: 4 }}>Let's get your restaurant set up in 3 steps</div>
+            </div>
+            {[
+              { num: "01", title: "ADD YOUR INGREDIENTS", desc: "Go to Settings → Inventory. Add everything you buy — buns, patties, fries, sauces. Use the Pack mode for items bought in bulk.", icon: "📦", tab: "settings" },
+              { num: "02", title: "BUILD YOUR MENU", desc: "Go to Settings → Menu. Add each item you sell, set the price, and link the ingredients it uses. The app calculates your profit margin automatically.", icon: "🍔", tab: "settings" },
+              { num: "03", title: "START RINGING UP SALES", desc: "Go to Ring Up. Tap items to build an order, hit Mark as Sold, and your inventory updates automatically.", icon: "💰", tab: "pos" },
+            ].map((step, i) => (
+              <div key={i} style={{ display: "flex", gap: 16, padding: "14px 0", borderBottom: i < 2 ? `1px solid ${G.border}` : "none" }}>
+                <div style={{ fontFamily: G.display, fontSize: 28, color: G.accent, width: 36, flexShrink: 0 }}>{step.num}</div>
+                <div style={{ fontSize: 22, flexShrink: 0 }}>{step.icon}</div>
+                <div>
+                  <div style={{ fontSize: 11, letterSpacing: 2, color: G.accent, marginBottom: 4 }}>{step.title}</div>
+                  <div style={{ fontSize: 12, color: G.muted, lineHeight: 1.7 }}>{step.desc}</div>
+                </div>
+              </div>
+            ))}
+            <div style={{ marginTop: 24, display: "flex", gap: 8 }}>
+              <button className="btn" style={{ flex: 1, fontSize: 13, padding: 13 }} onClick={() => { setTutorial(false); setTab("settings"); }}>START SETUP →</button>
+              <button className="btn-ghost" onClick={() => setTutorial(false)}>SKIP</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Daily Briefing Modal */}
       {briefing && (
         <div className="modal-bg" onClick={() => setBriefing(false)}>
@@ -800,6 +859,7 @@ function MainApp({ restaurant, role, update, onLogout, showToast }) {
           {lowStock.length > 0 && <span className="badge br">⚠ {lowStock.length} LOW</span>}
           <button style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer" }} onClick={() => setBriefing(true)} title="Daily Briefing">🔔</button>
           {!isOwner && <span className="badge by">STAFF MODE</span>}
+          <button onClick={toggleTheme} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer" }} title="Toggle theme">{theme === "dark" ? "☀️" : "🌙"}</button>
           <button className="btn-ghost" style={{ fontSize: 10, padding: "6px 12px" }} onClick={onLogout}>LOCK</button>
         </div>
       </div>
@@ -815,6 +875,25 @@ function MainApp({ restaurant, role, update, onLogout, showToast }) {
         {tab === "dashboard" && (
           <div className="fade">
             <div style={{ fontFamily: G.display, fontSize: 30, letterSpacing: 3, marginBottom: 20, color: "#fff" }}>TODAY'S OVERVIEW</div>
+            {(inventory.length === 0 || menuItems.length === 0) && (
+              <div className="card" style={{ borderColor: G.accent+"55", marginBottom: 20 }}>
+                <div style={{ fontSize: 10, letterSpacing: 2, color: G.accent, marginBottom: 12 }}>⚡ GETTING STARTED CHECKLIST</div>
+                {[
+                  { done: inventory.length > 0, label: "Add your ingredients", action: () => setTab("settings"), hint: "Settings → Inventory" },
+                  { done: menuItems.length > 0, label: "Build your menu", action: () => setTab("settings"), hint: "Settings → Menu" },
+                  { done: sales.length > 0, label: "Ring up your first sale", action: () => setTab("pos"), hint: "Ring Up tab" },
+                ].map((item, i) => (
+                  <div key={i} onClick={!item.done ? item.action : undefined} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: i < 2 ? `1px solid ${G.border}` : "none", cursor: item.done ? "default" : "pointer" }}>
+                    <div style={{ width: 22, height: 22, borderRadius: "50%", background: item.done ? G.green : G.border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, flexShrink: 0 }}>{item.done ? "✓" : i+1}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, color: item.done ? G.muted : G.text, textDecoration: item.done ? "line-through" : "none" }}>{item.label}</div>
+                      {!item.done && <div style={{ fontSize: 10, color: G.accent }}>→ {item.hint}</div>}
+                    </div>
+                    {item.done && <span className="badge bg">DONE</span>}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Forecast card */}
             <div className="card" style={{ marginBottom: 16, borderColor: G.accent + "44" }}>
@@ -900,8 +979,11 @@ function MainApp({ restaurant, role, update, onLogout, showToast }) {
                   <div style={{ background: "#0a0a14", border: `1px solid ${G.border}`, borderRadius: 6, padding: 16, textAlign: "left", marginBottom: 16 }}>
                     <div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 12 }}>ORDER SUMMARY — {receipt.time}</div>
                     {receipt.items.map(o => (
-                      <div key={o.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "5px 0", borderBottom: `1px solid ${G.border}` }}>
-                        <span>{o.name} <span style={{ color: G.muted }}>×{o.qty}</span></span>
+                      <div key={o._key || o.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "5px 0", borderBottom: `1px solid ${G.border}` }}>
+                        <div>
+                          <span>{o.name} <span style={{ color: G.muted }}>×{o.qty}</span></span>
+                          {o.modifiers && o.modifiers.length > 0 && <div style={{ fontSize: 10, color: G.accent }}>{o.modifiers.join(", ")}</div>}
+                        </div>
                         <span>${(o.price * o.qty).toFixed(2)}</span>
                       </div>
                     ))}
@@ -920,7 +1002,14 @@ function MainApp({ restaurant, role, update, onLogout, showToast }) {
                   <div style={{ background: G.green + "11", border: `1px solid ${G.green}33`, borderRadius: 6, padding: 12, marginBottom: 20, fontSize: 11, color: G.green }}>
                     📈 Your profit on this order: <strong>${receipt.profit.toFixed(2)}</strong> · Inventory updated
                   </div>
-                  <button className="btn" style={{ width: "100%", padding: 13 }} onClick={() => setReceipt(null)}>+ NEW ORDER</button>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 0 }}>
+                    <button className="btn-ghost" style={{ flex: 1 }} onClick={() => {
+                      const w = window.open("", "_blank");
+                      w.document.write(`<html><head><title>Receipt</title><style>body{font-family:monospace;padding:20px;max-width:300px;margin:0 auto}h2{text-align:center}hr{border:1px dashed #ccc}.row{display:flex;justify-content:space-between}.total{font-size:18px;font-weight:bold}.note{color:#888;font-size:12px;margin-top:8px}</style></head><body><h2>${restaurant.name}</h2><p style="text-align:center">${receipt.time}</p><hr/>${receipt.items.map(o => `<div class="row"><span>${o.name}${o.modifiers&&o.modifiers.length?" ("+o.modifiers.join(", ")+")" :""} x${o.qty}</span><span>$${(o.price*o.qty).toFixed(2)}</span></div>`).join("")}<hr/><div class="row"><span>Subtotal</span><span>$${receipt.subtotal.toFixed(2)}</span></div><div class="row"><span>Tax</span><span>$${receipt.tax.toFixed(2)}</span></div><div class="row total"><span>TOTAL</span><span>$${receipt.total.toFixed(2)}</span></div>${receipt.note?`<p class="note">Note: ${receipt.note}</p>`:""}<hr/><p style="text-align:center;font-size:12px">Thank you!</p></body></html>`);
+                      w.document.close(); w.print();
+                    }}>🖨 PRINT</button>
+                    <button className="btn" style={{ flex: 2, padding: 13 }} onClick={() => setReceipt(null)}>+ NEW ORDER</button>
+                  </div>
                 </div>
               </div>
             ) : menuItems.length === 0 ? (
@@ -956,7 +1045,7 @@ function MainApp({ restaurant, role, update, onLogout, showToast }) {
                           <div><div>{o.name}</div><div style={{ color: G.muted, fontSize: 10 }}>×{o.qty} @ ${o.price.toFixed(2)}</div></div>
                           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                             <span style={{ color: G.green }}>${(o.price * o.qty).toFixed(2)}</span>
-                            <button onClick={() => setOrder(prev => prev.filter(x => x.id !== o.id))} style={{ background: "none", border: "none", color: G.red, fontSize: 14 }}>✕</button>
+                            <button onClick={() => setOrder(prev => prev.filter(x => (x._key || x.id) !== (o._key || o.id)))} style={{ background: "none", border: "none", color: G.red, fontSize: 14 }}>✕</button>
                           </div>
                         </div>
                       ))}
@@ -973,6 +1062,30 @@ function MainApp({ restaurant, role, update, onLogout, showToast }) {
             )}
           </div>
         )}
+
+
+      {/* Modifier Modal */}
+      {modifierModal && (
+        <div className="modal-bg" onClick={() => setModifierModal(null)}>
+          <div className="modal slide" onClick={e => e.stopPropagation()} style={{ maxWidth: 380 }}>
+            <div style={{ fontFamily: G.display, fontSize: 24, letterSpacing: 2, color: "#fff", marginBottom: 4 }}>{modifierModal.item.name}</div>
+            <div style={{ fontSize: 11, color: G.muted, marginBottom: 20 }}>${modifierModal.item.price.toFixed(2)} · Select any modifications</div>
+            {["No onions", "No pickles", "No tomato", "No lettuce", "Extra cheese", "Extra sauce", "Well done", "Light ice", "No ice", "Extra crispy"].map(mod => (
+              <div key={mod} onClick={() => setModifierModal(m => ({
+                ...m,
+                modifiers: m.modifiers.includes(mod) ? m.modifiers.filter(x => x !== mod) : [...m.modifiers, mod]
+              }))} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", marginBottom: 8, background: modifierModal.modifiers.includes(mod) ? G.accent+"22" : "#0a0a14", border: `1px solid ${modifierModal.modifiers.includes(mod) ? G.accent : G.border}`, borderRadius: 6, cursor: "pointer", fontSize: 12, color: modifierModal.modifiers.includes(mod) ? G.accent : G.text }}>
+                {mod}
+                {modifierModal.modifiers.includes(mod) && <span>✓</span>}
+              </div>
+            ))}
+            <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
+              <button className="btn" style={{ flex: 1 }} onClick={() => confirmAddToOrder(modifierModal.item, modifierModal.modifiers)}>ADD TO ORDER</button>
+              <button className="btn-ghost" onClick={() => setModifierModal(null)}>CANCEL</button>
+            </div>
+          </div>
+        </div>
+      )}
 
         {/* ── INVENTORY ── */}
         {tab === "inventory" && (
@@ -1281,11 +1394,38 @@ function MainApp({ restaurant, role, update, onLogout, showToast }) {
               })()}
             </div>
 
+            {/* Weekly breakdown */}
+            {sales.some(s => s.date) && (
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 14 }}>SALES BY DAY</div>
+                {(() => {
+                  const byDate = {};
+                  sales.forEach(s => {
+                    const d = s.date || "Today";
+                    if (!byDate[d]) byDate[d] = { revenue: 0, profit: 0, count: 0 };
+                    byDate[d].revenue += s.price;
+                    byDate[d].profit += s.profit;
+                    byDate[d].count += 1;
+                  });
+                  return Object.entries(byDate).slice(-7).reverse().map(([date, data]) => (
+                    <div key={date} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${G.border}`, fontSize: 12 }}>
+                      <span style={{ color: G.muted }}>{date}</span>
+                      <div style={{ display: "flex", gap: 20 }}>
+                        <span>{data.count} sales</span>
+                        <span>${data.revenue.toFixed(2)}</span>
+                        <span style={{ color: G.green }}>+${data.profit.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            )}
+
             {/* Actions */}
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               <button className="btn" onClick={() => {
-                const rows = [["Item","Time","Sale","Food Cost","Profit","Note"]];
-                sales.forEach(s => rows.push([s.item, s.time, s.price.toFixed(2), s.cost.toFixed(2), s.profit.toFixed(2), s.note||""]));
+                const rows = [["Item","Date","Time","Sale","Food Cost","Profit","Note"]];
+                sales.forEach(s => rows.push([s.item, s.date||"", s.time, s.price.toFixed(2), s.cost.toFixed(2), s.profit.toFixed(2), s.note||""]));
                 const csv = rows.map(r => r.join(",")).join("\n");
                 const blob = new Blob([csv], { type: "text/csv" });
                 const url = URL.createObjectURL(blob);
@@ -1294,11 +1434,11 @@ function MainApp({ restaurant, role, update, onLogout, showToast }) {
                 a.click(); URL.revokeObjectURL(url);
               }}>⬇ EXPORT CSV</button>
               <button className="btn-ghost" style={{ color: G.red, borderColor: G.red+"44" }} onClick={() => {
-                if (window.confirm("Clear all sales for today? This cannot be undone.")) {
+                if (window.confirm("Clear all sales? This cannot be undone.")) {
                   update(r => ({ ...r, sales: [] }));
-                  t("Sales cleared for new day");
+                  t("Sales cleared");
                 }
-              }}>🗑 CLEAR DAY & RESET</button>
+              }}>🗑 CLEAR & RESET</button>
             </div>
           </div>
         )}
@@ -1308,17 +1448,29 @@ function MainApp({ restaurant, role, update, onLogout, showToast }) {
           <div className="fade">
             <div style={{ fontFamily: G.display, fontSize: 30, letterSpacing: 3, marginBottom: 8, color: "#fff" }}>PAYCHECK VIEW</div>
             <div style={{ fontSize: 12, color: G.muted, marginBottom: 24 }}>What you actually pocketed after food costs</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
-              <div className="card" style={{ borderTop: `2px solid ${G.text}` }}>
-                <div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 8 }}>GROSS REVENUE</div>
-                <div style={{ fontFamily: G.display, fontSize: 42 }}>${totalRevenue.toFixed(2)}</div>
-                <div style={{ fontSize: 11, color: G.muted }}>{sales.length} transactions</div>
-              </div>
-              <div className="card" style={{ borderTop: `2px solid ${G.red}` }}>
-                <div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 8 }}>FOOD COST</div>
-                <div style={{ fontFamily: G.display, fontSize: 42, color: G.red }}>− ${totalCOGS.toFixed(2)}</div>
-              </div>
-            </div>
+            {(() => {
+              const taxCollected = sales.reduce((s, x) => s + (x.price * taxRate / 100), 0);
+              const revenueAfterTax = totalRevenue - taxCollected;
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 14, marginBottom: 20 }}>
+                  <div className="card" style={{ borderTop: `2px solid ${G.text}` }}>
+                    <div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 8 }}>GROSS REVENUE</div>
+                    <div style={{ fontFamily: G.display, fontSize: 36 }}>${totalRevenue.toFixed(2)}</div>
+                    <div style={{ fontSize: 11, color: G.muted }}>{sales.length} transactions</div>
+                  </div>
+                  <div className="card" style={{ borderTop: `2px solid ${G.yellow}` }}>
+                    <div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 8 }}>TAX COLLECTED</div>
+                    <div style={{ fontFamily: G.display, fontSize: 36, color: G.yellow }}>− ${taxCollected.toFixed(2)}</div>
+                    <div style={{ fontSize: 11, color: G.muted }}>owed to government</div>
+                  </div>
+                  <div className="card" style={{ borderTop: `2px solid ${G.red}` }}>
+                    <div style={{ fontSize: 10, letterSpacing: 2, color: G.muted, marginBottom: 8 }}>FOOD COST</div>
+                    <div style={{ fontFamily: G.display, fontSize: 36, color: G.red }}>− ${totalCOGS.toFixed(2)}</div>
+                    <div style={{ fontSize: 11, color: G.muted }}>ingredients used</div>
+                  </div>
+                </div>
+              );
+            })()}
             <div className="card" style={{ borderColor: G.accent + "55", marginBottom: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
@@ -1338,11 +1490,11 @@ function MainApp({ restaurant, role, update, onLogout, showToast }) {
                     {sales.slice().reverse().map(s => (
                       <tr key={s.id}>
                         <td>{s.item}</td>
-                        <td style={{ color: G.muted }}>{s.time}</td>
+                        <td style={{ color: G.muted }}>{s.date ? `${s.date} ` : ""}{s.time}</td>
                         <td>${s.price.toFixed(2)}</td>
                         <td style={{ color: G.red }}>−${s.cost.toFixed(2)}</td>
                         <td style={{ color: G.green }}>+${s.profit.toFixed(2)}</td>
-                        {s.note && <td style={{ color: G.muted, fontSize: 10 }}>{s.note}</td>}
+                        {s.note && <td style={{ color: G.muted, fontSize: 10, fontStyle: "italic" }}>{s.note}</td>}
                       </tr>
                     ))}
                   </tbody>
