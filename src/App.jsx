@@ -9,6 +9,30 @@ function getCOGS(item, inventory) {
   }, 0);
 }
 
+// ─── Data Persistence ─────────────────────────────────────────────────────────
+const STORAGE_KEY = "profitplate_data_v1";
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveData(restaurants) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(restaurants));
+  } catch (e) {
+    console.warn("Could not save data:", e);
+  }
+}
+
+
+
 const G = {
   bg: "#080810", card: "#10101c", border: "#1c1c2e",
   accent: "#ff6b2b", accentHover: "#ff8c4f",
@@ -98,7 +122,7 @@ const css = `
 
 // ─── MAIN APP ────────────────────────────────────────────────────────────────
 export default function App() {
-  const [restaurants, setRestaurants] = useState({});
+  const [restaurants, setRestaurants] = useState(() => loadData());
   const [screen, setScreen] = useState("landing");
   const [activeId, setActiveId] = useState(null);
   const [toast, setToast] = useState(null);
@@ -111,7 +135,9 @@ export default function App() {
   function updateRestaurant(id, updater) {
     setRestaurants(prev => {
       const updated = typeof updater === "function" ? updater(prev[id]) : { ...prev[id], ...updater };
-      return { ...prev, [id]: updated };
+      const next = { ...prev, [id]: updated };
+      saveData(next);
+      return next;
     });
   }
 
@@ -166,7 +192,11 @@ export default function App() {
     <SetupWizard
       onComplete={data => {
         const id = uid();
-        setRestaurants(prev => ({ ...prev, [id]: { ...data, id } }));
+        setRestaurants(prev => {
+          const next = { ...prev, [id]: { ...data, id } };
+          saveData(next);
+          return next;
+        });
         setActiveId(id);
         setScreen("app");
         showToast("Welcome to ProfitPlate!");
@@ -1153,6 +1183,75 @@ function MainApp({ restaurant, update, onLogout, showToast }) {
   );
 }
 
+
+// ─── RESTOCK ROW COMPONENT ────────────────────────────────────────────────────
+function RestockRow({ item, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [fields, setFields] = useState({ qty: item.qty, name: item.name, cost: item.cost, threshold: item.threshold });
+  const [addQty, setAddQty] = useState("");
+
+  function handleRestock() {
+    const add = parseFloat(addQty);
+    if (!addQty || isNaN(add) || add <= 0) return;
+    const newQty = parseFloat((item.qty + add).toFixed(2));
+    onSave({ qty: newQty });
+    setAddQty("");
+  }
+
+  function handleSaveEdit() {
+    onSave({ name: fields.name, cost: parseFloat(fields.cost) || item.cost, threshold: parseFloat(fields.threshold) || item.threshold, qty: parseFloat(fields.qty) || item.qty });
+    setEditing(false);
+  }
+
+  const status = item.qty <= item.threshold ? "CRITICAL" : item.qty <= item.threshold * 2 ? "LOW" : "OK";
+  const statusColor = status === "CRITICAL" ? G.red : status === "LOW" ? G.yellow : G.green;
+
+  return (
+    <div style={{ background: "#0a0a14", border: `1px solid ${G.border}`, borderRadius: 6, padding: 14 }}>
+      {!editing ? (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <div style={{ fontSize: 13, color: G.text, fontWeight: 500 }}>{item.name}</div>
+              <span style={{ fontSize: 10, color: G.muted }}>{item.unit}</span>
+              <span className={"badge " + (status === "CRITICAL" ? "br" : status === "LOW" ? "by" : "bg")}>{status}</span>
+            </div>
+            <button className="btn-ghost" style={{ fontSize: 10, padding: "5px 10px" }} onClick={() => { setFields({ qty: item.qty, name: item.name, cost: item.cost, threshold: item.threshold }); setEditing(true); }}>EDIT</button>
+          </div>
+          <div style={{ display: "flex", gap: 16, fontSize: 11, color: G.muted, marginBottom: 12 }}>
+            <span>In stock: <span style={{ color: statusColor, fontFamily: G.display, fontSize: 16 }}>{item.qty}</span></span>
+            <span>Reorder at: <span style={{ color: G.text }}>{item.threshold}</span></span>
+            <span>Cost/unit: <span style={{ color: G.text }}>${item.cost}</span></span>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input type="number" placeholder="Add qty (e.g. +24 when you restock)" value={addQty} onChange={e => setAddQty(e.target.value)}
+              style={{ maxWidth: 260 }} />
+            <button className="btn" style={{ whiteSpace: "nowrap", padding: "9px 16px" }} onClick={handleRestock}>+ ADD STOCK</button>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div style={{ fontSize: 10, letterSpacing: 2, color: G.accent, marginBottom: 12 }}>EDITING: {item.name}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <div><div style={{ fontSize: 10, color: G.muted, marginBottom: 4 }}>NAME</div>
+              <input value={fields.name} onChange={e => setFields(f => ({ ...f, name: e.target.value }))} /></div>
+            <div><div style={{ fontSize: 10, color: G.muted, marginBottom: 4 }}>CURRENT QTY</div>
+              <input type="number" value={fields.qty} onChange={e => setFields(f => ({ ...f, qty: e.target.value }))} /></div>
+            <div><div style={{ fontSize: 10, color: G.muted, marginBottom: 4 }}>COST PER UNIT ($)</div>
+              <input type="number" value={fields.cost} onChange={e => setFields(f => ({ ...f, cost: e.target.value }))} /></div>
+            <div><div style={{ fontSize: 10, color: G.muted, marginBottom: 4 }}>REORDER THRESHOLD</div>
+              <input type="number" value={fields.threshold} onChange={e => setFields(f => ({ ...f, threshold: e.target.value }))} /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn" onClick={handleSaveEdit}>SAVE CHANGES</button>
+            <button className="btn-ghost" onClick={() => setEditing(false)}>CANCEL</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── SETTINGS PANEL ───────────────────────────────────────────────────────────
 function SettingsPanel({ restaurant, update, showToast, inventory, menuItems }) {
   const [section, setSection] = useState("restaurant");
@@ -1240,6 +1339,20 @@ function SettingsPanel({ restaurant, update, showToast, inventory, menuItems }) 
       {section === "inventory" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <InventoryForm invItem={invItem} setInvItem={setInvItem} onAdd={addInv} inventory={inventory} onDelete={id => update(r => ({ ...r, inventory: (r.inventory || inventory).filter(i => i.id !== id) }))} />
+          {inventory.length > 0 && (
+            <div className="card">
+              <div style={{ fontSize: 10, letterSpacing: 2, color: G.accent, marginBottom: 4 }}>RESTOCK AND EDIT</div>
+              <div style={{ fontSize: 11, color: G.muted, marginBottom: 16 }}>Update qty when you restock, or edit name, cost, and reorder threshold anytime.</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {inventory.map(item => (
+                  <RestockRow key={item.id} item={item} onSave={(updated) => {
+                    update(r => ({ ...r, inventory: (r.inventory || inventory).map(i => i.id === item.id ? { ...i, ...updated } : i) }));
+                    showToast(item.name + " updated!");
+                  }} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
