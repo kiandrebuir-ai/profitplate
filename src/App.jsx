@@ -575,6 +575,12 @@ function MainApp({G,css,theme,toggleTheme,restaurant,role,update,onLogout,showTo
   const [briefing,setBriefing]=useState(true);
   const [tutorial,setTutorial]=useState(false);
   const [toast2,setToast2]=useState(null);
+  const [showTip,setShowTip]=useState(null);
+  const [seenTabs,setSeenTabs]=useState(()=>{try{const d=localStorage.getItem("pp_seen_tabs");return d?JSON.parse(d):[];}catch{return [];}});
+  const [advisorMessages,setAdvisorMessages]=useState([{role:"assistant",content:"Hey! I'm your ProfitPlate AI Business Advisor. I'm here to help you grow your restaurant, improve profits, and build your brand.\n\nTo give you the best advice, let me learn about your business first. What type of restaurant do you run, and how long have you been open?"}]);
+  const [advisorInput,setAdvisorInput]=useState("");
+  const [advisorLoading,setAdvisorLoading]=useState(false);
+  const [businessContext,setBusinessContext]=useState({type:"",platforms:[],challenges:[],goals:[]});
 
   function t(msg,type="success"){setToast2({msg,type});setTimeout(()=>setToast2(null),2600);}
 
@@ -603,6 +609,7 @@ function MainApp({G,css,theme,toggleTheme,restaurant,role,update,onLogout,showTo
     {id:"waste",label:"Waste",icon:"🔍",ownerOnly:true},
     {id:"eod",label:"End of Day",icon:"📋",ownerOnly:true},
     {id:"paycheck",label:"Paycheck",icon:"$",ownerOnly:true},
+    {id:"advisor",label:"AI Advisor",icon:"💬",ownerOnly:true},
     {id:"settings",label:"Settings",icon:"⚙",ownerOnly:true},
   ];
   const tabs=allTabs.filter(t2=>!t2.ownerOnly||isOwner);
@@ -673,6 +680,197 @@ function MainApp({G,css,theme,toggleTheme,restaurant,role,update,onLogout,showTo
     update(r=>({...r,sales:(r.sales||sales).slice(0,-1),inventory:newInv}));
     t("Last sale voided");
   }
+
+  async function sendAdvisorMessage(){
+    if(!advisorInput.trim()||advisorLoading) return;
+    const userMsg={role:"user",content:advisorInput.trim()};
+    const newMsgs=[...advisorMessages,userMsg];
+    setAdvisorMessages(newMsgs);
+    setAdvisorInput("");
+    setAdvisorLoading(true);
+
+    // Build rich business context from app data
+    const topItems=[...menuItems].sort((a,b)=>{
+      const ma=(a.price-getCOGS(a,inventory))/Math.max(a.price,0.01);
+      const mb=(b.price-getCOGS(b,inventory))/Math.max(b.price,0.01);
+      return mb-ma;
+    }).slice(0,3).map(m=>`${m.name} ($${m.price}, ${((m.price-getCOGS(m,inventory))/m.price*100).toFixed(0)}% margin)`).join(", ");
+    const lowStockItems=inventory.filter(i=>i.qty<=i.threshold).map(i=>i.name).join(", ");
+    const avgSale=sales.length>0?(totalRevenue/sales.length).toFixed(2):"0";
+
+    const systemPrompt = `You are an expert restaurant business advisor inside ProfitPlate, a restaurant management app. You are talking directly to a restaurant owner. Your job is to give them detailed, actionable, street-smart business advice — not generic tips.
+
+CURRENT BUSINESS DATA:
+- Restaurant: ${restaurant.name}
+- Total revenue tracked: $${totalRevenue.toFixed(2)}
+- Net profit: $${totalProfit.toFixed(2)}  
+- Profit margin: ${totalRevenue>0?((totalProfit/totalRevenue)*100).toFixed(1):0}%
+- Total sales logged: ${sales.length}
+- Average sale: $${avgSale}
+- Menu items: ${menuItems.length}
+- Low stock alerts: ${lowStockItems||"none"}
+- Top margin items: ${topItems||"none yet"}
+- Inventory items tracked: ${inventory.length}
+
+BUSINESS CONTEXT FROM CONVERSATION:
+${JSON.stringify(businessContext)}
+
+YOUR BEHAVIOR:
+1. Ask smart follow-up questions to understand their business deeply before giving advice. Ask one question at a time.
+2. When they mention a problem, dig into it — ask what they've already tried, what their customer base looks like, what their price point is.
+3. When they mention social media or content, ask which platforms they use and what has worked. Then give platform-specific advice.
+4. Reference their actual app data when relevant — mention their real margins, their low stock items, their top sellers.
+5. Give specific, detailed advice. Not "post more content" — say "post a behind-the-scenes reel showing how you make your [top item] on Tuesday at 6pm when your audience is most active."
+6. Be direct and honest. If their margins are bad, say so. If they need to raise prices, tell them exactly which items and by how much.
+7. Think like a business partner, not a chatbot. Push back if they have a bad idea. Celebrate wins with them.
+8. Cover any topic they bring up: marketing, pricing, staffing, inventory, social media, delivery apps, catering, expansion, branding.
+9. Always end your response with either a follow-up question OR a specific action they should take today.
+
+Keep responses conversational but detailed. Use line breaks to make it readable. Never give a one-liner response.`;
+
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          system: systemPrompt,
+          messages: newMsgs.map(m=>({role:m.role,content:m.content}))
+        })
+      });
+      const data = await response.json();
+      const reply = data.content?.[0]?.text || "Something went wrong. Try again.";
+
+      // Extract context clues from conversation
+      const fullConvo = newMsgs.map(m=>m.content).join(" ").toLowerCase();
+      if(fullConvo.includes("instagram")||fullConvo.includes("tiktok")||fullConvo.includes("facebook")){
+        const platforms=[];
+        if(fullConvo.includes("instagram")) platforms.push("Instagram");
+        if(fullConvo.includes("tiktok")) platforms.push("TikTok");
+        if(fullConvo.includes("facebook")) platforms.push("Facebook");
+        setBusinessContext(c=>({...c,platforms}));
+      }
+
+      setAdvisorMessages(prev=>[...prev,{role:"assistant",content:reply}]);
+    } catch(err) {
+      setAdvisorMessages(prev=>[...prev,{role:"assistant",content:"Connection error. Check your internet and try again."}]);
+    }
+    setAdvisorLoading(false);
+  }
+
+  const TAB_TIPS = {
+    dashboard: {
+      title: "DASHBOARD",
+      tips: [
+        "Check this screen every morning before service starts.",
+        "The Getting Started checklist disappears once you add inventory and menu items.",
+        "Revenue Forecast is based on your sales history — the more sales you log the more accurate it gets.",
+        "Click any low stock alert to jump straight to inventory.",
+        "The bell icon at the top opens your Daily Briefing with a full summary and action item."
+      ]
+    },
+    pos: {
+      title: "RING UP SALE",
+      tips: [
+        "Tap any menu item to open the modifier screen — add things like No Onions or Extra Cheese.",
+        "The margin % badge on each item tells you which ones are most profitable — push the green ones.",
+        "Add an order note for special requests like Table 4 or allergy info.",
+        "Hit VOID LAST SALE if you ring up the wrong item — inventory gets restored automatically.",
+        "After marking as sold, use the PRINT button to open a printable receipt in a new tab."
+      ]
+    },
+    inventory: {
+      title: "INVENTORY",
+      tips: [
+        "Use PACK mode for anything you buy in bulk — buns, cans, bottles. Just enter pack size and price.",
+        "Use BULK mode for fries, oil, flour, or anything sold by weight.",
+        "Set your reorder threshold carefully — this is what triggers the LOW and CRITICAL alerts.",
+        "Use the RESTOCK section at the bottom to add stock when a delivery arrives.",
+        "The Reorder Intelligence cards show how many days of stock you have left based on actual sales."
+      ]
+    },
+    margins: {
+      title: "MARGINS",
+      tips: [
+        "Items are sorted highest to lowest margin — your most profitable items are at the top.",
+        "Anything below 45% margin (red) needs attention — either raise the price or reduce the cost.",
+        "COGS = your actual ingredient cost per item based on what you entered in inventory.",
+        "Use this screen before creating daily specials — push your highest margin items.",
+        "If your margins look off, check that your ingredient costs are up to date in Settings."
+      ]
+    },
+    deals: {
+      title: "DEAL ENGINE",
+      tips: [
+        "Combos are auto-generated from your menu — the app picks pairs with the best combined margin.",
+        "The suggested combo price gives customers a small discount while keeping your profit strong.",
+        "Overstocked items show up as Promo Opportunities — run a special to move them before they expire.",
+        "Use these combo ideas for your daily specials board or social media posts.",
+        "The more menu items you add the more combo options the engine generates."
+      ]
+    },
+    pricing: {
+      title: "PRICING AI",
+      tips: [
+        "Items flagged RAISE PRICE are costing you money — act on these first.",
+        "The suggested price is calculated to hit a healthy 55-70% margin.",
+        "Click APPLY to update the price instantly — it reflects everywhere in the app immediately.",
+        "CONSIDER LOWERING items may be priced too high for your market — use your judgment.",
+        "Re-check this screen every time your ingredient costs change."
+      ]
+    },
+    waste: {
+      title: "WASTE MONITOR",
+      tips: [
+        "This screen compares how much you should have used vs what actually left your inventory.",
+        "POSSIBLE THEFT means a big gap — more went missing than sales can explain.",
+        "OVER-PORTIONING means your staff is using more per dish than the recipe calls for.",
+        "Review this screen at the end of every week to catch issues early.",
+        "If everything shows ON TRACK your portions and inventory are aligned perfectly."
+      ]
+    },
+    eod: {
+      title: "END OF DAY",
+      tips: [
+        "Run this screen at closing time every day for a full performance summary.",
+        "Sales by Day shows your week-over-week trends — look for your strongest and weakest days.",
+        "Export CSV to save your sales data to a spreadsheet — great for your accountant or taxes.",
+        "Use Best Sellers to decide what to feature on your menu board or social media tomorrow.",
+        "Hit CLEAR AND RESET at the end of each day or week to start fresh — data is saved in the CSV export."
+      ]
+    },
+    paycheck: {
+      title: "PAYCHECK VIEW",
+      tips: [
+        "Tax Collected is money you owe the government — do not spend it, set it aside.",
+        "Your Take-Home is profit after food costs only — labor and overhead are not included yet.",
+        "Use this screen at the end of the week to see your real earnings.",
+        "Order notes show up in the transaction log so you can trace any sale.",
+        "The date and time on every transaction helps you spot your busiest hours and days."
+      ]
+    },
+    advisor: {
+      title: "AI ADVISOR",
+      tips: [
+        "The more context you give the better the advice — share your challenges, goals, and what you've tried.",
+        "Tell the advisor which social platforms you use and it will give you platform-specific content ideas.",
+        "Ask about pricing, marketing, staffing, delivery apps, catering — anything business related.",
+        "The advisor sees your real app data — margins, low stock, revenue — and uses it in advice.",
+        "Be specific with your questions. The more detail you give the more detailed the answer."
+      ]
+    },
+    settings: {
+      title: "SETTINGS",
+      tips: [
+        "Always add your ingredients before building menu items — you need them to link.",
+        "Update ingredient costs whenever supplier prices change — this keeps your margins accurate.",
+        "Staff PIN gives employees access to Ring Up only — they cannot see financials.",
+        "Use the EDIT button on any menu item to update price or ingredients without deleting it.",
+        "Your restaurant name and logo show on the PIN screen — make it look professional."
+      ]
+    }
+  };
 
   return (
     <div style={{fontFamily:G.font,background:G.bg,minHeight:"100vh",color:G.text}}>
@@ -786,6 +984,27 @@ function MainApp({G,css,theme,toggleTheme,restaurant,role,update,onLogout,showTo
         </div>
       )}
 
+      {/* Tip Overlay */}
+      {showTip&&TAB_TIPS[showTip]&&(
+        <div className="modal-bg" onClick={()=>setShowTip(null)}>
+          <div className="modal slide" onClick={e=>e.stopPropagation()} style={{maxWidth:480}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div>
+                <div style={{fontFamily:G.display,fontSize:26,letterSpacing:2,color:G.accent}}>{TAB_TIPS[showTip].title}</div>
+                <div style={{fontSize:11,color:G.muted}}>HOW TO GET THE MOST OUT OF THIS SCREEN</div>
+              </div>
+              <button className="btn-ghost" style={{fontSize:11,padding:"6px 12px"}} onClick={()=>setShowTip(null)}>CLOSE</button>
+            </div>
+            {TAB_TIPS[showTip].tips.map((tip,i)=>(
+              <div key={i} style={{display:"flex",gap:14,padding:"12px 0",borderBottom:i<TAB_TIPS[showTip].tips.length-1?`1px solid ${G.border}`:"none"}}>
+                <div style={{width:24,height:24,borderRadius:"50%",background:G.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#080810",flexShrink:0,fontWeight:"bold"}}>{i+1}</div>
+                <div style={{fontSize:12,color:G.text,lineHeight:1.7}}>{tip}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{borderBottom:`1px solid ${G.border}`,padding:"14px 24px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -805,8 +1024,17 @@ function MainApp({G,css,theme,toggleTheme,restaurant,role,update,onLogout,showTo
       </div>
 
       {/* Tabs */}
-      <div style={{padding:"10px 20px",borderBottom:`1px solid ${G.border}`,display:"flex",gap:6,flexWrap:"wrap"}}>
-        {tabs.map(t2=><button key={t2.id} className={`tab${tab===t2.id?" on":""}`} onClick={()=>setTab(t2.id)}>{t2.icon} {t2.label}</button>)}
+      <div style={{padding:"10px 20px",borderBottom:`1px solid ${G.border}`,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+        {tabs.map(t2=><button key={t2.id} className={`tab${tab===t2.id?" on":""}`} onClick={()=>{
+          setTab(t2.id);
+          if(!seenTabs.includes(t2.id)&&TAB_TIPS[t2.id]){
+            setTimeout(()=>setShowTip(t2.id),200);
+            const updated=[...seenTabs,t2.id];
+            setSeenTabs(updated);
+            try{localStorage.setItem("pp_seen_tabs",JSON.stringify(updated));}catch{}
+          }
+        }}>{t2.icon} {t2.label}</button>)}
+        <button onClick={()=>setShowTip(tab)} style={{background:"none",border:`1px solid ${G.accent}55`,borderRadius:"50%",width:28,height:28,color:G.accent,fontSize:13,cursor:"pointer",marginLeft:"auto",flexShrink:0}} title="How to use this screen">?</button>
       </div>
 
       <div style={{padding:24,maxWidth:1100,margin:"0 auto"}}>
@@ -1213,6 +1441,81 @@ function MainApp({G,css,theme,toggleTheme,restaurant,role,update,onLogout,showTo
                 </table>
               </div>
             )}
+          </div>
+        )}
+
+        {/* AI ADVISOR */}
+        {tab==="advisor"&&(
+          <div className="fade" style={{display:"flex",flexDirection:"column",height:"calc(100vh - 180px)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
+              <div>
+                <div style={{fontFamily:G.display,fontSize:30,letterSpacing:3,color:G.accent}}>💬 AI BUSINESS ADVISOR</div>
+                <div style={{fontSize:11,color:G.muted,marginTop:2}}>Powered by Claude AI · Knows your real business data</div>
+              </div>
+              <button className="btn-ghost" style={{fontSize:10,padding:"6px 12px"}} onClick={()=>setAdvisorMessages([{role:"assistant",content:"Hey! I'm your ProfitPlate AI Business Advisor. I'm here to help you grow your restaurant, improve profits, and build your brand.\n\nTo give you the best advice, let me learn about your business first. What type of restaurant do you run, and how long have you been open?"}])}}>RESET CHAT</button>
+            </div>
+
+            {/* Quick prompt buttons */}
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
+              {[
+                "How can I increase my profit margins?",
+                "Give me social media content ideas",
+                "What should I do about low stock?",
+                "How do I get more customers?",
+                "Should I join DoorDash or Uber Eats?",
+                "Help me create a daily special",
+              ].map(q=>(
+                <button key={q} onClick={()=>setAdvisorInput(q)} style={{background:G.accent+"18",border:`1px solid ${G.accent}33`,borderRadius:20,padding:"5px 12px",fontSize:11,color:G.accent,cursor:"pointer",whiteSpace:"nowrap"}}>
+                  {q}
+                </button>
+              ))}
+            </div>
+
+            {/* Chat messages */}
+            <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:12,marginBottom:16,paddingRight:4}}>
+              {advisorMessages.map((msg,i)=>(
+                <div key={i} style={{display:"flex",gap:10,justifyContent:msg.role==="user"?"flex-end":"flex-start"}}>
+                  {msg.role==="assistant"&&(
+                    <div style={{width:32,height:32,borderRadius:"50%",background:G.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0,alignSelf:"flex-start"}}>🍔</div>
+                  )}
+                  <div style={{
+                    maxWidth:"75%",padding:"12px 16px",borderRadius:msg.role==="user"?"12px 12px 2px 12px":"12px 12px 12px 2px",
+                    background:msg.role==="user"?G.accent:G.card,
+                    color:msg.role==="user"?"#080810":G.text,
+                    border:msg.role==="user"?"none":`1px solid ${G.border}`,
+                    fontSize:12,lineHeight:1.8,whiteSpace:"pre-wrap"
+                  }}>
+                    {msg.content}
+                  </div>
+                  {msg.role==="user"&&(
+                    <div style={{width:32,height:32,borderRadius:"50%",background:G.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0,alignSelf:"flex-start"}}>👤</div>
+                  )}
+                </div>
+              ))}
+              {advisorLoading&&(
+                <div style={{display:"flex",gap:10}}>
+                  <div style={{width:32,height:32,borderRadius:"50%",background:G.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>🍔</div>
+                  <div style={{background:G.card,border:`1px solid ${G.border}`,borderRadius:"12px 12px 12px 2px",padding:"12px 16px",fontSize:12,color:G.muted}}>
+                    Thinking<span style={{animation:"pulse 1s infinite"}}>...</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Input */}
+            <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+              <textarea
+                value={advisorInput}
+                onChange={e=>setAdvisorInput(e.target.value)}
+                onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendAdvisorMessage();}}}
+                placeholder="Ask anything about your restaurant — marketing, pricing, staffing, content ideas..."
+                style={{flex:1,resize:"none",height:48,borderRadius:8,padding:"12px 14px",fontSize:12,fontFamily:G.font,background:G.card,border:`1px solid ${G.border}`,color:G.text,outline:"none"}}
+              />
+              <button className="btn" style={{height:48,padding:"0 20px",flexShrink:0}} onClick={sendAdvisorMessage} disabled={advisorLoading}>
+                {advisorLoading?"...":"SEND →"}
+              </button>
+            </div>
+            <div style={{fontSize:10,color:G.muted,marginTop:8,textAlign:"center"}}>Press Enter to send · Shift+Enter for new line · The advisor sees your real sales and margin data</div>
           </div>
         )}
 
