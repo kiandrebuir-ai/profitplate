@@ -113,6 +113,40 @@ export default function App() {
           {rList.length>0 && <button className="btn-ghost" style={{fontSize:13,padding:"13px 32px"}} onClick={()=>setScreen("select")}>OPEN EXISTING</button>}
         </div>
         {rList.length>0 && <div style={{marginTop:20,fontSize:11,color:G.muted}}>{rList.length} restaurant{rList.length!==1?"s":""} registered</div>}
+        <div style={{display:"flex",gap:10,justifyContent:"center",marginTop:24,flexWrap:"wrap"}}>
+          <button onClick={()=>{
+            const data=JSON.stringify(store,null,2);
+            const blob=new Blob([data],{type:"application/json"});
+            const url=URL.createObjectURL(blob);
+            const a=document.createElement("a");
+            a.href=url;a.download=`profitplate-backup-${new Date().toISOString().slice(0,10)}.json`;
+            a.click();URL.revokeObjectURL(url);
+          }} style={{background:"none",border:`1px solid ${G.accent}44`,borderRadius:5,padding:"7px 16px",fontSize:11,color:G.accent,cursor:"pointer"}}>⬇ BACKUP DATA</button>
+          <label style={{background:"none",border:`1px solid ${G.border}`,borderRadius:5,padding:"7px 16px",fontSize:11,color:G.muted,cursor:"pointer"}}>
+            ⬆ RESTORE BACKUP
+            <input type="file" accept=".json" style={{display:"none"}} onChange={e=>{
+              const file=e.target.files[0];
+              if(!file) return;
+              const reader=new FileReader();
+              reader.onload=ev=>{
+                try{
+                  const parsed=JSON.parse(ev.target.result);
+                  if(parsed.restaurants){
+                    setStore(parsed);
+                    saveData(parsed);
+                    showToast("Data restored successfully!");
+                  } else {
+                    showToast("Invalid backup file","error");
+                  }
+                } catch {
+                  showToast("Could not read file","error");
+                }
+              };
+              reader.readAsText(file);
+              e.target.value="";
+            }} />
+          </label>
+        </div>
       </div>
       {toast && <div className={`toast ${toast.type==="success"?"ts":"te"}`}>{toast.msg}</div>}
     </div>
@@ -731,7 +765,12 @@ Keep responses conversational but detailed. Use line breaks to make it readable.
     try {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: {"Content-Type":"application/json"},
+        headers: {
+          "Content-Type":"application/json",
+          "x-api-key": import.meta.env.VITE_ANTHROPIC_KEY || "",
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true"
+        },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
           max_tokens: 1000,
@@ -1574,6 +1613,21 @@ function SettingsPanel({G,restaurant,update,showToast,inventory,menuItems,setEdi
           <div><div style={{fontSize:10,letterSpacing:2,color:G.muted,marginBottom:6}}>LOGO URL</div><input value={form.logo} onChange={e=>setForm(f=>({...f,logo:e.target.value}))} placeholder="https://..." /></div>
           <div><div style={{fontSize:10,letterSpacing:2,color:G.muted,marginBottom:6}}>TAX RATE (%)</div><input type="number" value={form.taxRate} onChange={e=>setForm(f=>({...f,taxRate:e.target.value}))} /></div>
           <button className="btn" onClick={saveRestaurant}>SAVE CHANGES</button>
+          <div style={{marginTop:8,paddingTop:16,borderTop:`1px solid ${G.border}`}}>
+            <div style={{fontSize:10,letterSpacing:2,color:G.muted,marginBottom:10}}>DATA BACKUP</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button className="btn-ghost" style={{fontSize:11}} onClick={()=>{
+                const data=JSON.stringify({restaurants:{[restaurant.id]:restaurant}},null,2);
+                const blob=new Blob([data],{type:"application/json"});
+                const url=URL.createObjectURL(blob);
+                const a=document.createElement("a");
+                a.href=url;a.download=`${restaurant.name.replace(/\s/g,"-")}-backup-${new Date().toISOString().slice(0,10)}.json`;
+                a.click();URL.revokeObjectURL(url);
+                showToast("Backup downloaded!");
+              }}>⬇ DOWNLOAD BACKUP</button>
+            </div>
+            <div style={{fontSize:10,color:G.muted,marginTop:8}}>Download a backup after every major setup change. Restore from the main screen.</div>
+          </div>
         </div>
       )}
 
