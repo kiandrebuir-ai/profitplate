@@ -1452,7 +1452,7 @@ Keep responses conversational but detailed. Use line breaks to make it readable.
                 <div style={{fontFamily:G.display,fontSize:30,letterSpacing:3,color:G.accent}}>💬 AI BUSINESS ADVISOR</div>
                 <div style={{fontSize:11,color:G.muted,marginTop:2}}>Powered by Claude AI · Knows your real business data</div>
               </div>
-              <button className="btn-ghost" style={{fontSize:10,padding:"6px 12px"}} onClick={()=>setAdvisorMessages([{role:"assistant",content:"Hey! I'm your ProfitPlate AI Business Advisor. I'm here to help you grow your restaurant, improve profits, and build your brand.\n\nTo give you the best advice, let me learn about your business first. What type of restaurant do you run, and how long have you been open?"}])}}>RESET CHAT</button>
+              <button className="btn-ghost" style={{fontSize:10,padding:"6px 12px"}} onClick={()=>setAdvisorMessages([{role:"assistant",content:"Hey! I'm your ProfitPlate AI Business Advisor. I'm here to help you grow your restaurant, improve profits, and build your brand.\n\nTo give you the best advice, let me learn about your business first. What type of restaurant do you run, and how long have you been open?"}])}>RESET CHAT</button>
             </div>
 
             {/* Quick prompt buttons */}
